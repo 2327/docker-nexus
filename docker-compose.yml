@@ -1,0 +1,17 @@
+version: '3'
+
+services:
+  nexus:
+    container_name: nexus
+    image: nexus:${NEXUS_VERSION}-${NEXUS_VERSION_BUILD}
+    build:                                                                                                                                                                                                                       
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXUS_VERSION: ${NEXUS_VERSION}
+        NEXUS_VERSION_BUILD: ${NEXUS_VERSION_BUILD}
+        GL_APP_TOKEN: ${GL_APP_TOKEN}
+    ports:
+      - ${NEXUS_PORT}:8081
+    volumes:
+      - ./nexus_data:/nexus-data:rw

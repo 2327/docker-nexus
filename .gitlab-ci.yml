@@ -1,0 +1,16 @@
+stages:
+  - build
+
+before_script:
+  - docker login -u gitlab-ci-token -p ${CI_JOB_TOKEN} ${CI_REGISTRY}
+
+build:
+  stage: build
+  script:
+    - docker build --build-arg NEXUS_VERSION=${CI_COMMIT_TAG%%-*} --build-arg NEXUS_VERSION_BUILD=${CI_COMMIT_TAG##*-} -t nexus:${CI_COMMIT_TAG} . -f Dockerfile
+    - docker push nexus:${CI_COMMIT_TAG}
+  except:
+    - schedules
+  only:
+    - tags
+

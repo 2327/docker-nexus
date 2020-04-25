@@ -1,0 +1,142 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Chart.Name }}
+  labels:
+    app: {{ .Chart.Name }}
+spec:
+  serviceName: {{ .Chart.Name }}
+  selector:
+    matchLabels:
+      app: {{ .Chart.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Chart.Name }}
+    spec:
+      imagePullSecrets:
+      - name: registrysecret
+      initContainers:
+      - name: fix-permissions
+        image: busybox
+        command: ["sh", "-c", "chown -R 200:200 /nexus-data"]
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: nexus-data
+          mountPath: /nexus-data
+      containers:
+      - name: nexus
+        - name: install4jAddVmParams
+          value: "-Xms1200M -Xmx1200M -XX:MaxDirectMemorySize=2G -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap"
+        readinessProbe: 
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          failureThreshold: 6
+          httpGet:
+            path: /
+            port: 8081
+        livenessProbe:
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          failureThreshold: 6
+          httpGet:
+            path: /
+            port: 8081
+        volumeMounts:
+        - name: nexus-data
+          mountPath: /nexus-data
+        ports:
+        - name: {{ .Chart.Name }}-http
+          containerPort: 8081
+  volumeClaimTemplates:
+  - metadata:
+      name: nexus-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: gp2
+      resources:
+        requests:
+          storage: 50G
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Chart.Name }}
+spec:
+  selector:
+    app: {{ .Chart.Name }}
+  clusterIP: None
+  ports:
+  - name: http
+    port: 80
+    targetPort: {{ .Chart.Name }}-http
+
+---
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: {{ .Chart.Name }}
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/proxy-body-size: 150m
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+spec:
+  rules:
+  - host: {{ .Values.global.ci_url }} 
+    http: 
+      paths:
+      - path: /
+        backend: 
+          serviceName: {{ .Chart.Name }}
+          servicePort: http
+  tls:
+  - hosts:
+    - {{ .Values.global.ci_url | quote }}
+    secretName: {{ .Chart.Name }}-ssl
+
+---
+apiVersion: certmanager.k8s.io/v1alpha1
+kind: Certificate
+metadata:
+  name: {{ .Chart.Name }}-cert
+spec:
+  secretName: {{ .Chart.Name }}-ssl
+  issuerRef:
+    kind: ClusterIssuer
+    name: letsencrypt
+  commonName: {{ .Values.global.ci_url }}
+  dnsNames:
+  - {{ .Values.global.ci_url }}
+  acme:
+    config:
+    - http01:
+        ingressClass: nginx
+      domains:
+      - {{ .Values.global.ci_url }}
+
+---
+apiVersion: autoscaling.k8s.io/v1beta2
+kind: VerticalPodAutoscaler
+metadata:
+  name: {{ .Chart.Name }}-vpa
+spec:
+  targetRef:
+    apiVersion: "apps/v1"
+    kind: StatefulSet
+    name: {{ .Chart.Name }}
+  updatePolicy:
+    updateMode: "Initial"
+  resourcePolicy:
+    containerPolicies:
+    - containerName: nexus
+      minAllowed:
+        memory: 1200Mi
+        cpu: 120m
+      maxAllowed:
+        memory: 1200Mi
+        cpu: 350m
+      mode: Auto
