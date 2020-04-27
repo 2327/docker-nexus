@@ -11,6 +11,8 @@ build:
     - docker push nexus:${CI_COMMIT_TAG}
   except:
     - schedules
+  only:
+    - tags
   tags:
     - build
 
