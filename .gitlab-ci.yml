@@ -13,4 +13,6 @@ build:
     - schedules
   only:
     - tags
+  tags:
+    - build
 
